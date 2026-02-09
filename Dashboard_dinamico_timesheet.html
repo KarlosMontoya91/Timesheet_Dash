@@ -1,0 +1,805 @@
+<!DOCTYPE html>
+<html lang="es">
+
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>Timesheet Dashboard</title>
+  <!-- Bootstrap 5 -->
+  <link href="https://cdn.jsdelivr.net/npm/bootstrap@5.3.3/dist/css/bootstrap.min.css" rel="stylesheet">
+  <!-- Google Fonts: Inter -->
+  <link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap" rel="stylesheet">
+  <!-- Lucide Icons -->
+  <script src="https://unpkg.com/lucide@latest"></script>
+  <!-- Chart.js & Utils -->
+  <script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.1/dist/chart.umd.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/papaparse@5.4.1/papaparse.min.js"></script>
+  <script src="https://cdn.jsdelivr.net/npm/xlsx@0.19.3/dist/xlsx.full.min.js"></script>
+
+  <style>
+    :root {
+      --bg-body: #050505;
+      --bg-sidebar: #0d0d0d;
+      --bg-card: #141414;
+      --bg-input: #1a1a1a;
+      --border-color: #333333;
+      --accent: #a3ff33;
+      /* Verde neón brillante */
+      --accent-muted: rgba(163, 255, 51, 0.2);
+      --text-main: #ffffff;
+      /* Blanco puro para lectura principal */
+      --text-secondary: #d4d4d4;
+      /* Gris plata para descripciones */
+      --text-label: #ffffff;
+      /* Etiquetas siempre en blanco */
+      --sidebar-width: 260px;
+    }
+
+    body {
+      background-color: var(--bg-body);
+      color: var(--text-main);
+      font-family: 'Inter', sans-serif;
+      overflow-x: hidden;
+      margin: 0;
+      -webkit-font-smoothing: antialiased;
+    }
+
+    /* --- Navegación Lateral (Sidebar) --- */
+    .sidebar {
+      width: var(--sidebar-width);
+      height: 100vh;
+      background-color: var(--bg-sidebar);
+      border-right: 1px solid var(--border-color);
+      position: fixed;
+      left: 0;
+      top: 0;
+      display: flex;
+      flex-direction: column;
+      padding: 1.5rem;
+      z-index: 1000;
+    }
+
+    .sidebar-brand {
+      display: flex;
+      align-items: center;
+      gap: 12px;
+      font-weight: 800;
+      font-size: 1.4rem;
+      margin-bottom: 3rem;
+      color: var(--text-main);
+      text-decoration: none;
+    }
+
+    .brand-dot {
+      width: 14px;
+      height: 14px;
+      background-color: var(--accent);
+      border-radius: 50%;
+      box-shadow: 0 0 15px var(--accent);
+    }
+
+    .nav-group-label {
+      font-size: 0.8rem;
+      text-transform: uppercase;
+      letter-spacing: 1.5px;
+      color: var(--text-secondary);
+      margin-bottom: 1.2rem;
+      font-weight: 700;
+      opacity: 0.8;
+    }
+
+    .nav-item {
+      display: flex;
+      align-items: center;
+      gap: 14px;
+      padding: 0.9rem 1.2rem;
+      color: var(--text-secondary);
+      text-decoration: none;
+      border-radius: 14px;
+      transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+      margin-bottom: 0.6rem;
+      font-weight: 600;
+      cursor: pointer;
+    }
+
+    .nav-item:hover {
+      color: var(--text-main);
+      background-color: var(--bg-input);
+    }
+
+    .nav-item.active {
+      background-color: var(--accent);
+      color: #000;
+    }
+
+    /* --- Contenido Principal --- */
+    .main-content {
+      margin-left: var(--sidebar-width);
+      padding: 3rem;
+      min-height: 100vh;
+    }
+
+    .dashboard-header {
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      margin-bottom: 3rem;
+    }
+
+    /* --- Filtros y Accesibilidad --- */
+    .card {
+      background-color: var(--bg-card);
+      border: 1px solid var(--border-color);
+      border-radius: 24px;
+      padding: 1.8rem;
+      height: 100%;
+      box-shadow: 0 10px 30px rgba(0, 0, 0, 0.3);
+    }
+
+    .form-label {
+      color: var(--text-label) !important;
+      font-weight: 700 !important;
+      font-size: 0.9rem;
+      margin-bottom: 0.7rem;
+      display: block;
+    }
+
+    .form-control,
+    .form-select {
+      background-color: var(--bg-input);
+      border: 2px solid var(--border-color);
+      color: var(--text-main) !important;
+      border-radius: 14px;
+      padding: 0.8rem 1rem;
+      font-weight: 500;
+    }
+
+    .form-control:focus,
+    .form-select:focus {
+      border-color: var(--accent);
+      box-shadow: 0 0 0 4px var(--accent-muted);
+    }
+
+    .btn-accent {
+      background-color: var(--accent);
+      color: #000;
+      font-weight: 800;
+      border: none;
+      border-radius: 14px;
+      padding: 0.9rem 1.8rem;
+      text-transform: uppercase;
+      letter-spacing: 0.5px;
+    }
+
+    .btn-outline-custom {
+      border: 2px solid var(--border-color);
+      color: var(--text-main);
+      border-radius: 14px;
+      background: none;
+      font-weight: 700;
+    }
+
+    /* --- KPIs --- */
+    .kpi-title {
+      color: var(--text-secondary);
+      font-size: 0.95rem;
+      font-weight: 700;
+      margin-bottom: 0.5rem;
+    }
+
+    .kpi-value {
+      font-size: 2.4rem;
+      font-weight: 900;
+      color: var(--text-main);
+      line-height: 1;
+    }
+
+    /* --- Tabla de Datos --- */
+    .table {
+      color: var(--text-main);
+      --bs-table-bg: transparent;
+      --bs-table-border-color: #333;
+    }
+
+    .table thead th {
+      font-weight: 800;
+      color: var(--text-main);
+      padding: 1.4rem 1rem;
+      border-bottom: 2px solid var(--accent);
+      background-color: rgba(255, 255, 255, 0.02);
+    }
+
+    .table tbody td {
+      padding: 1.2rem 1rem;
+      vertical-align: middle;
+      font-weight: 500;
+    }
+
+    /* --- Proyectos Grid --- */
+    .project-card-item {
+      background: var(--bg-input);
+      padding: 1.2rem;
+      border-radius: 16px;
+      margin-bottom: 1rem;
+      border: 1px solid var(--border-color);
+      display: flex;
+      justify-content: space-between;
+      align-items: center;
+      transition: transform 0.2s;
+    }
+
+    .project-card-item:hover {
+      transform: scale(1.02);
+      border-color: var(--accent);
+    }
+
+    /* --- Animaciones de Vista --- */
+    .view-section {
+      display: none;
+      animation: slideUp 0.4s cubic-bezier(0, 0, 0.2, 1);
+    }
+
+    .view-section.active {
+      display: block;
+    }
+
+    @keyframes slideUp {
+      from {
+        opacity: 0;
+        transform: translateY(20px);
+      }
+
+      to {
+        opacity: 1;
+        transform: translateY(0);
+      }
+    }
+
+    .chart-container {
+      position: relative;
+      height: 350px;
+      width: 100%;
+    }
+
+    /* Scrollbar Personalizado */
+    ::-webkit-scrollbar {
+      width: 8px;
+    }
+
+    ::-webkit-scrollbar-track {
+      background: var(--bg-body);
+    }
+
+    ::-webkit-scrollbar-thumb {
+      background: #333;
+      border-radius: 10px;
+    }
+
+    ::-webkit-scrollbar-thumb:hover {
+      background: var(--accent);
+    }
+  </style>
+</head>
+
+<body>
+
+  <!-- Sidebar -->
+  <aside class="sidebar">
+    <a href="#" class="sidebar-brand">
+      <div class="brand-dot"></div>
+      <span>K-Dash</span>
+    </a>
+
+    <div class="nav-group">
+      <div class="nav-group-label">Navegación</div>
+      <div class="nav-item active" onclick="switchView('overview', event)">
+        <i data-lucide="layout-dashboard" size="22"></i>
+        Tablero Principal
+      </div>
+      <div class="nav-item" onclick="switchView('analysis', event)">
+        <i data-lucide="activity" size="22"></i>
+        Análisis de Carga
+      </div>
+      <div class="nav-item" onclick="switchView('projects', event)">
+        <i data-lucide="layers" size="22"></i>
+        Mis Proyectos
+      </div>
+    </div>
+
+    <div class="nav-group mt-5">
+      <div class="nav-group-label">Herramientas</div>
+      <div class="nav-item" onclick="switchView('insights', event)">
+        <i data-lucide="brain-circuit" size="22"></i>
+        Insights (IA)
+      </div>
+      <div class="nav-item" onclick="switchView('reports', event)">
+        <i data-lucide="file-down" size="22"></i>
+        Exportar Reportes
+      </div>
+    </div>
+
+    <div class="sidebar-footer">
+      <div class="nav-item">
+        <i data-lucide="user-round" size="22"></i>
+        Perfil
+      </div>
+    </div>
+  </aside>
+
+  <!-- Main Content -->
+  <main class="main-content">
+
+    <!-- Header -->
+    <header class="dashboard-header">
+      <div>
+        <h1 class="h2 fw-bold mb-1" id="viewTitle">Tablero Principal</h1>
+        <p style="color: var(--text-secondary); font-size: 1rem; font-weight: 500;" id="metaSpan">Listo para procesar tu
+          registro de tiempos.</p>
+      </div>
+      <div class="d-flex gap-3 align-items-center">
+        <button class="btn btn-accent d-flex align-items-center shadow-lg"
+          onclick="document.getElementById('fileInput').click()">
+          <i data-lucide="plus-circle" size="20" class="me-2"></i>Cargar Timesheet
+        </button>
+        <input type="file" id="fileInput" class="d-none" accept=".xlsx,.xls,.csv" />
+      </div>
+    </header>
+
+    <!-- Filtros de Alta Visibilidad -->
+    <section class="card mb-5">
+      <div class="row g-4 align-items-end">
+        <div class="col-md-3">
+          <label class="form-label">Seleccionar Hoja</label>
+          <select id="sheetSelect" class="form-select"></select>
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Fecha Inicio</label>
+          <input type="date" id="fInicio" class="form-control">
+        </div>
+        <div class="col-md-2">
+          <label class="form-label">Fecha Fin</label>
+          <input type="date" id="fFin" class="form-control">
+        </div>
+        <div class="col-md-3">
+          <label class="form-label">Categoría Principal</label>
+          <select id="selCategoria" class="form-select">
+            <option value="">Mostrar Todas</option>
+          </select>
+        </div>
+        <div class="col-md-2 d-flex gap-2">
+          <button id="btnReset" class="btn btn-outline-custom w-100">Reiniciar</button>
+        </div>
+      </div>
+    </section>
+
+    <!-- Vistas del Sistema -->
+    <div id="views">
+
+      <!-- VISTA: TABLERO PRINCIPAL -->
+      <div id="overview" class="view-section active">
+        <!-- KPIs Principales -->
+        <div class="row g-4 mb-5">
+          <div class="col-md-3">
+            <div class="card">
+              <div class="kpi-title">Horas Registradas</div>
+              <div id="kpiTotal" class="kpi-value">0.0 h</div>
+              <div style="color: var(--accent); font-weight: 700; margin-top: 5px;" id="kpiSubtext">Carga requerida
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card">
+              <div class="kpi-title">Promedio por Jornada</div>
+              <div id="kpiDiario" class="kpi-value">0.0 h</div>
+              <div style="color: var(--text-secondary); font-size: 0.85rem; font-weight: 600;">Días con actividad</div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card">
+              <div class="kpi-title">Proyectos Detectados</div>
+              <div id="kpiProyectos" class="kpi-value">0</div>
+              <div style="color: var(--text-secondary); font-size: 0.85rem; font-weight: 600;">Ecosistema de trabajo
+              </div>
+            </div>
+          </div>
+          <div class="col-md-3">
+            <div class="card">
+              <div class="kpi-title">Pico de Esfuerzo</div>
+              <div id="kpiMaxDia" class="kpi-value">0.0 h</div>
+              <div style="color: var(--text-secondary); font-size: 0.85rem; font-weight: 600;">Máximo en 24h</div>
+            </div>
+          </div>
+        </div>
+
+        <!-- Gráficos de Tablero -->
+        <div class="row g-4 mb-5">
+          <div class="col-lg-8">
+            <div class="card">
+              <h5 class="fw-800 mb-4" style="color: #fff;">Tendencia Temporal de Horas</h5>
+              <div class="chart-container">
+                <canvas id="chartDiario"></canvas>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-4">
+            <div class="card">
+              <h5 class="fw-800 mb-4" style="color: #fff;">Tipos de Actividad</h5>
+              <div class="chart-container">
+                <canvas id="chartCategoria"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+
+        <div class="card">
+          <h5 class="fw-800 mb-4" style="color: #fff;">Bitácora de Actividades (Últimos Registros)</h5>
+          <div class="table-responsive">
+            <table class="table" id="tblActividades">
+              <thead>
+                <tr>
+                  <th>Fecha</th>
+                  <th>Proyecto / Aplicación</th>
+                  <th>Descripción de Actividad</th>
+                  <th class="text-end">Horas</th>
+                </tr>
+              </thead>
+              <tbody>
+                <tr>
+                  <td colspan="4" class="text-center py-5" style="color: var(--text-secondary); font-weight: 600;">No
+                    hay datos para mostrar</td>
+                </tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA: ANÁLISIS DE CARGA -->
+      <div id="analysis" class="view-section">
+        <div class="row g-4">
+          <div class="col-lg-12">
+            <div class="card">
+              <h5 class="fw-800 mb-4" style="color: #fff;">Intensidad de Trabajo por Semana</h5>
+              <p style="color: var(--text-secondary); font-weight: 500;" class="mb-4">Visualización de la consistencia
+                laboral semana a semana.</p>
+              <div class="chart-container" style="height: 450px;">
+                <canvas id="chartAnalisis"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA: MIS PROYECTOS -->
+      <div id="projects" class="view-section">
+        <div class="row g-4">
+          <div class="col-lg-5">
+            <div class="card">
+              <h5 class="fw-800 mb-4" style="color: #fff;">Desglose por Proyecto</h5>
+              <div id="projectsList" class="mt-2">
+                <div class="text-center py-5">
+                  <i data-lucide="info" size="32" class="text-muted mb-3"></i>
+                  <p style="color: var(--text-secondary); font-weight: 600;">Carga un archivo para ver tus proyectos.
+                  </p>
+                </div>
+              </div>
+            </div>
+          </div>
+          <div class="col-lg-7">
+            <div class="card">
+              <h5 class="fw-800 mb-4" style="color: #fff;">Ranking de Esfuerzo (Top 10)</h5>
+              <div class="chart-container">
+                <canvas id="chartProjects"></canvas>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+
+      <!-- VISTA: INSIGHTS (IA) -->
+      <div id="insights" class="view-section">
+        <div class="row g-4" id="insightsGrid">
+          <div class="col-md-12">
+            <div class="card text-center py-5">
+              <h3 class="fw-800">Procesando Análisis...</h3>
+              <p style="color: var(--text-secondary);">El motor de IA está esperando la entrada de datos.</p>
+            </div>
+          </div>
+        </div>
+      </div>
+
+    </div>
+  </main>
+
+  <script>
+    // --- Configuración Global ---
+    let RECORDS = [], WORKBOOK = null;
+    let charts = {};
+    const theme = {
+      accent: '#a3ff33',
+      grid: '#333333',
+      text: '#ffffff', // Forzado a blanco para legibilidad
+      secondary: '#d4d4d4',
+      palette: ['#a3ff33', '#00e5ff', '#ff007f', '#ffcc00', '#9d50bb', '#6e48aa', '#00ff87']
+    };
+
+    // Navegación Robusta
+    function switchView(viewId, ev) {
+      document.querySelectorAll('.view-section').forEach(v => v.classList.remove('active'));
+      document.querySelectorAll('.nav-item').forEach(v => v.classList.remove('active'));
+
+      const target = document.getElementById(viewId);
+      if (target) target.classList.add('active');
+      if (ev) ev.currentTarget.classList.add('active');
+
+      const titles = {
+        overview: 'Tablero Principal',
+        analysis: 'Análisis de Carga',
+        projects: 'Mis Proyectos',
+        insights: 'Análisis Inteligente',
+        reports: 'Exportación'
+      };
+      document.getElementById('viewTitle').textContent = titles[viewId] || 'Dashboard';
+
+      // Actualizar gráficos si hay datos
+      if (RECORDS.length > 0) rebuild();
+    }
+
+    // Procesamiento de Fechas y Semanas
+    const fmt = n => (Math.round((n || 0) * 100) / 100).toLocaleString('es-MX');
+    const ymd = d => d.toISOString().split('T')[0];
+    const isoWeek = d => {
+      const date = new Date(d.getTime());
+      date.setHours(0, 0, 0, 0);
+      date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
+      const week1 = new Date(date.getFullYear(), 0, 4);
+      return Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7) + 1;
+    };
+
+    // Mapeo Inteligente de Columnas (Compatible con el CSV compartido)
+    const headerMap = {
+      fecha: new Set(['dia', 'día', 'fecha', 'fecha de registro']),
+      categoria: new Set(['categoria', 'categoría']),
+      tipo: new Set(['tipo de actividad', 'tipo actividad', 'tipo']),
+      app: new Set(['aplicacion', 'aplicación', 'proyecto']),
+      actividad: new Set(['actividad', 'descripción', 'descripcion']),
+      horas: new Set(['duracion (horas)', 'duración (horas)', 'horas', 'duración', 'tiempo'])
+    };
+
+    function guessMapping(keys) {
+      const mapping = {};
+      keys.forEach(k => {
+        const nk = k.toLowerCase().normalize('NFD').replace(/[\u0300-\u036f]/g, '').trim();
+        for (const canon in headerMap) {
+          if (headerMap[canon].has(nk)) mapping[canon] = k;
+        }
+      });
+      return mapping;
+    }
+
+    // Carga de Archivos
+    document.getElementById('fileInput').addEventListener('change', async (e) => {
+      const file = e.target.files[0];
+      if (!file) return;
+
+      document.getElementById('metaSpan').textContent = "Procesando archivo...";
+
+      if (file.name.endsWith('.csv')) {
+        Papa.parse(file, { header: true, skipEmptyLines: true, complete: res => processData(res.data) });
+      } else {
+        const data = await file.arrayBuffer();
+        const wb = XLSX.read(data, { type: 'array' });
+        const sheetName = wb.SheetNames[0];
+        const sheetSel = document.getElementById('sheetSelect');
+        sheetSel.innerHTML = wb.SheetNames.map(n => `<option>${n}</option>`).join('');
+        processData(XLSX.utils.sheet_to_json(wb.Sheets[sheetName], { defval: null }));
+      }
+    });
+
+    function processData(rows) {
+      if (!rows.length) {
+        document.getElementById('metaSpan').textContent = "Error: El archivo está vacío.";
+        return;
+      }
+      const map = guessMapping(Object.keys(rows[0]));
+
+      RECORDS = rows.map(r => {
+        let rawDate = r[map.fecha];
+        let d = isNaN(Date.parse(rawDate)) ? null : new Date(rawDate);
+        let h = parseFloat(String(r[map.horas]).replace(',', '.')) || 0;
+        return {
+          fecha: d ? ymd(d) : null,
+          objFecha: d,
+          semana: d ? `S${isoWeek(d)}` : null,
+          categoria: r[map.categoria] || 'General',
+          tipo: r[map.tipo] || 'Otros',
+          app: r[map.app] || 'Sin Proyecto',
+          actividad: r[map.actividad] || 'Sin descripción',
+          horas: h
+        };
+      }).filter(r => r.fecha && r.horas > 0);
+
+      const dates = RECORDS.map(r => r.fecha).sort();
+      document.getElementById('fInicio').value = dates[0];
+      document.getElementById('fFin').value = dates[dates.length - 1];
+
+      const cats = Array.from(new Set(RECORDS.map(r => r.categoria))).sort();
+      document.getElementById('selCategoria').innerHTML = '<option value="">Mostrar Todas</option>' + cats.map(c => `<option>${c}</option>`).join('');
+
+      document.getElementById('metaSpan').textContent = `Carga finalizada: ${RECORDS.length} registros analizados.`;
+      rebuild();
+    }
+
+    function rebuild() {
+      const fi = document.getElementById('fInicio').value;
+      const ff = document.getElementById('fFin').value;
+      const fc = document.getElementById('selCategoria').value;
+
+      const data = RECORDS.filter(r => {
+        if (fi && r.fecha < fi) return false;
+        if (ff && r.fecha > ff) return false;
+        if (fc && r.categoria !== fc) return false;
+        return true;
+      });
+
+      if (!data.length) return;
+
+      // KPIs de Alta Visibilidad
+      const total = data.reduce((a, b) => a + b.horas, 0);
+      const uniqueDays = new Set(data.map(r => r.fecha)).size;
+      const uniqueApps = new Set(data.map(r => r.app)).size;
+
+      document.getElementById('kpiTotal').textContent = `${fmt(total)} h`;
+      document.getElementById('kpiDiario').textContent = `${fmt(total / uniqueDays)} h`;
+      document.getElementById('kpiProyectos').textContent = uniqueApps;
+
+      const byDay = Array.from(data.reduce((m, r) => m.set(r.fecha, (m.get(r.fecha) || 0) + r.horas), new Map())).sort();
+      const maxDia = Math.max(...byDay.map(d => d[1]));
+      document.getElementById('kpiMaxDia').textContent = `${fmt(maxDia)} h`;
+      document.getElementById('kpiSubtext').textContent = "Carga verificada";
+
+      // Ejecutar Renderizado de Gráficos según Vista
+      renderDashboardCharts(data, byDay);
+      renderAnalysisCharts(data);
+      renderProjectsCharts(data);
+      renderInsights(data, total);
+
+      // Bitácora Reciente
+      const tbody = document.querySelector('#tblActividades tbody');
+      tbody.innerHTML = data.slice(-12).reverse().map(r => `
+        <tr>
+          <td class="text-secondary small fw-bold">${r.fecha}</td>
+          <td><span class="fw-800">${r.app}</span></td>
+          <td class="small" style="color: #bbb">${r.actividad}</td>
+          <td class="text-end fw-900" style="color:var(--accent)">${fmt(r.horas)} h</td>
+        </tr>
+      `).join('');
+
+      lucide.createIcons();
+    }
+
+    function renderDashboardCharts(data, byDay) {
+      updateChart('chartDiario', 'line', byDay.map(d => d[0]), byDay.map(d => d[1]), {
+        borderColor: theme.accent,
+        backgroundColor: 'rgba(163, 255, 51, 0.15)',
+        fill: true,
+        tension: 0.4,
+        pointRadius: 4,
+        borderWidth: 3
+      });
+
+      const byTipo = Array.from(data.reduce((m, r) => m.set(r.tipo, (m.get(r.tipo) || 0) + r.horas), new Map()));
+      updateChart('chartCategoria', 'doughnut', byTipo.map(t => t[0]), byTipo.map(t => t[1]), {
+        plugins: {
+          legend: { display: true, position: 'bottom', labels: { color: '#ffffff', font: { weight: 'bold' } } }
+        }
+      });
+    }
+
+    function renderAnalysisCharts(data) {
+      const byWeek = Array.from(data.reduce((m, r) => m.set(r.semana, (m.get(r.semana) || 0) + r.horas), new Map())).sort();
+      updateChart('chartAnalisis', 'bar', byWeek.map(w => w[0]), byWeek.map(w => w[1]), {
+        backgroundColor: theme.accent,
+        borderRadius: 12,
+        hoverBackgroundColor: '#ffffff'
+      });
+    }
+
+    function renderProjectsCharts(data) {
+      const byApp = Array.from(data.reduce((m, r) => m.set(r.app, (m.get(r.app) || 0) + r.horas), new Map())).sort((a, b) => b[1] - a[1]);
+
+      const list = document.getElementById('projectsList');
+      const total = data.reduce((a, b) => a + b.horas, 0);
+      list.innerHTML = byApp.map(app => `
+        <div class="project-card-item">
+          <div>
+            <div class="fw-800" style="color:#fff">${app[0]}</div>
+            <div style="color:var(--text-secondary); font-size:0.75rem; font-weight:700">${fmt((app[1] / total) * 100)}% del esfuerzo total</div>
+          </div>
+          <div class="fw-900 h5 mb-0" style="color:var(--accent)">${fmt(app[1])} h</div>
+        </div>
+      `).join('');
+
+      updateChart('chartProjects', 'bar', byApp.slice(0, 10).map(a => a[0]), byApp.slice(0, 10).map(a => a[1]), {
+        indexAxis: 'y',
+        backgroundColor: theme.palette,
+        borderRadius: 8
+      });
+    }
+
+    function renderInsights(data, total) {
+      const grid = document.getElementById('insightsGrid');
+      const byApp = Array.from(data.reduce((m, r) => m.set(r.app, (m.get(r.app) || 0) + r.horas), new Map())).sort((a, b) => b[1] - a[1]);
+      const topApp = byApp[0];
+
+      grid.innerHTML = `
+        <div class="col-md-6">
+          <div class="card" style="border-left: 8px solid var(--accent)">
+            <h5 class="fw-800" style="color:var(--accent)">Centro de Esfuerzo</h5>
+            <p class="mt-3" style="font-weight:500">Tu proyecto dominante es <span class="fw-800 text-white">${topApp[0]}</span>, absorbiendo <strong>${fmt(topApp[1])} horas</strong>. Sugerencia: Evalúa si este tiempo está alineado con tus objetivos trimestrales.</p>
+          </div>
+        </div>
+        <div class="col-md-6">
+          <div class="card" style="border-left: 8px solid #00e5ff">
+            <h5 class="fw-800" style="color:#00e5ff">Diagnóstico de Salud Laboral</h5>
+            <p class="mt-3" style="font-weight:500">Tu promedio de <span class="fw-800 text-white">${fmt(total / new Set(data.map(r => r.fecha)).size)} h/día</span> indica una carga ${total / new Set(data.map(r => r.fecha)).size > 9 ? 'ALTA' : 'ESTABLE'}. No olvides programar descansos activos.</p>
+          </div>
+        </div>
+      `;
+    }
+
+    // Actualización de Gráficos con Control de Accesibilidad (Color de Texto)
+    function updateChart(id, type, labels, values, extraOptions) {
+      const ctx = document.getElementById(id);
+      if (!ctx) return;
+      if (charts[id]) charts[id].destroy();
+
+      const config = {
+        type: type,
+        data: {
+          labels: labels,
+          datasets: [{
+            label: 'Horas',
+            data: values,
+            ...extraOptions
+          }]
+        },
+        options: {
+          responsive: true,
+          maintainAspectRatio: false,
+          plugins: {
+            legend: {
+              display: extraOptions.plugins?.legend?.display || false,
+              labels: { color: '#ffffff', font: { weight: 'bold', size: 12 } }
+            }
+          },
+          scales: type === 'doughnut' ? {} : {
+            x: {
+              grid: { display: false },
+              ticks: { color: '#ffffff', font: { weight: '600' } }
+            },
+            y: {
+              grid: { color: theme.grid },
+              ticks: { color: '#ffffff', font: { weight: '600' } }
+            }
+          }
+        }
+      };
+      charts[id] = new Chart(ctx, config);
+    }
+
+    // Eventos de Control
+    document.getElementById('btnReset').addEventListener('click', () => {
+      document.querySelectorAll('select').forEach(s => s.selectedIndex = 0);
+      rebuild();
+    });
+
+    ['fInicio', 'fFin', 'selCategoria'].forEach(id => {
+      document.getElementById(id).addEventListener('change', rebuild);
+    });
+
+    window.onload = () => lucide.createIcons();
+  </script>
+</body>
+
+</html>
