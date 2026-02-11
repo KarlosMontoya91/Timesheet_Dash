@@ -457,13 +457,52 @@
       <!-- VISTA: ANÁLISIS DE CARGA -->
       <div id="analysis" class="view-section">
         <div class="row g-4">
+          <!-- Tarjetas de Resumen Semanal -->
+          <div class="col-md-4">
+            <div class="card">
+              <div class="kpi-title">Semanas Completas (40h+)</div>
+              <div id="kpiSemanasOk" class="kpi-value" style="color: var(--accent)">0</div>
+              <div class="small text-secondary mt-1">Objetivo cumplido</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card">
+              <div class="kpi-title">Semanas Incompletas</div>
+              <div id="kpiSemanasFail" class="kpi-value" style="color: #ff4d4d">0</div>
+              <div class="small text-secondary mt-1">Requieren atención</div>
+            </div>
+          </div>
+          <div class="col-md-4">
+            <div class="card">
+              <div class="kpi-title">Total Horas Pendientes</div>
+              <div id="kpiHorasPendientes" class="kpi-value text-white">0.0 h</div>
+              <div class="small text-secondary mt-1">Déficit acumulado</div>
+            </div>
+          </div>
+
+          <!-- Gráfico y Tabla -->
           <div class="col-lg-12">
             <div class="card">
               <h5 class="fw-800 mb-4" style="color: #fff;">Intensidad de Trabajo por Semana</h5>
               <p style="color: var(--text-secondary); font-weight: 500;" class="mb-4">Visualización de la consistencia
                 laboral semana a semana.</p>
-              <div class="chart-container" style="height: 450px;">
+              <div class="chart-container" style="height: 350px;">
                 <canvas id="chartAnalisis"></canvas>
+              </div>
+
+              <h5 class="fw-800 mt-5 mb-3" style="color: #fff;">Detalle de Cumplimiento Semanal</h5>
+              <div class="table-responsive">
+                <table class="table" id="tblSemanas">
+                  <thead>
+                    <tr>
+                      <th>Semana</th>
+                      <th>Horas Registradas</th>
+                      <th>Estado</th>
+                      <th class="text-end">Balance (40h)</th>
+                    </tr>
+                  </thead>
+                  <tbody></tbody>
+                </table>
               </div>
             </div>
           </div>
@@ -545,15 +584,17 @@
       if (RECORDS.length > 0) rebuild();
     }
 
-    // Procesamiento de Fechas y Semanas
+    // Procesamiento de Fechas y Semanas (ISO 8601)
     const fmt = n => (Math.round((n || 0) * 100) / 100).toLocaleString('es-MX');
     const ymd = d => d.toISOString().split('T')[0];
-    const isoWeek = d => {
+
+    const getISOWeek = d => {
       const date = new Date(d.getTime());
       date.setHours(0, 0, 0, 0);
       date.setDate(date.getDate() + 3 - (date.getDay() + 6) % 7);
       const week1 = new Date(date.getFullYear(), 0, 4);
-      return Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7) + 1;
+      const week = Math.round(((date.getTime() - week1.getTime()) / 86400000 - 3 + (week1.getDay() + 6) % 7) / 7) + 1;
+      return { year: date.getFullYear(), week: week };
     };
 
     // Mapeo Inteligente de Columnas (Compatible con el CSV compartido)
@@ -607,10 +648,18 @@
         let rawDate = r[map.fecha];
         let d = isNaN(Date.parse(rawDate)) ? null : new Date(rawDate);
         let h = parseFloat(String(r[map.horas]).replace(',', '.')) || 0;
+
+        // Calcular Año-Semana para agrupar correctamente
+        let semanaKey = null;
+        if (d) {
+          const iso = getISOWeek(d);
+          semanaKey = `${iso.year}-W${String(iso.week).padStart(2, '0')}`;
+        }
+
         return {
           fecha: d ? ymd(d) : null,
           objFecha: d,
-          semana: d ? `S${isoWeek(d)}` : null,
+          semana: semanaKey,
           categoria: r[map.categoria] || 'General',
           tipo: r[map.tipo] || 'Otros',
           app: r[map.app] || 'Sin Proyecto',
@@ -697,10 +746,85 @@
     }
 
     function renderAnalysisCharts(data) {
-      const byWeek = Array.from(data.reduce((m, r) => m.set(r.semana, (m.get(r.semana) || 0) + r.horas), new Map())).sort();
-      updateChart('chartAnalisis', 'bar', byWeek.map(w => w[0]), byWeek.map(w => w[1]), {
-        backgroundColor: theme.accent,
-        borderRadius: 12,
+      // Agrupar por semana
+      const byWeekMap = data.reduce((m, r) => {
+        m.set(r.semana, (m.get(r.semana) || 0) + r.horas);
+        return m;
+      }, new Map());
+
+      const byWeek = Array.from(byWeekMap).sort((a, b) => a[0].localeCompare(b[0])); // Orden alfabético funciona bien con YYYY-Www
+
+      // Calcular Estadísticas Semanales
+      let semanasOk = 0;
+      let semanasFail = 0;
+      let semanasOver = 0;
+      let horasPendientes = 0;
+      const TARGET_HOURS = 40;
+
+      const stats = byWeek.map(([semana, horas]) => {
+        const diff = horas - TARGET_HOURS;
+        let status, color, statusLabel, balanceText;
+
+        // Lógica de Estado solicitada
+        if (horas < TARGET_HOURS) {
+          status = 'incomplete';
+          statusLabel = 'Incompleta';
+          color = '#ff4d4d'; // Rojo
+          balanceText = `Faltan ${fmt(Math.abs(diff))} h`;
+          semanasFail++;
+          horasPendientes += (TARGET_HOURS - horas);
+        } else if (horas >= TARGET_HOURS) {
+          // Caso base: Completada
+          semanasOk++;
+
+          // Distinción visual para "Exceso" (> 40)
+          if (horas > 40) {
+            status = 'over';
+            statusLabel = 'Excedente';
+            color = '#00e5ff'; // Cyan para resaltar visualmente el "extra"
+            balanceText = `+${fmt(diff)} h extra`;
+            semanasOver++;
+          } else {
+            status = 'complete';
+            statusLabel = 'Completada';
+            color = 'var(--accent)'; // Verde
+            balanceText = 'Objetivo Cumplido';
+          }
+        }
+
+        return { semana, horas, status, statusLabel, color, balanceText, diff };
+      });
+
+      // Actualizar KPIs Semanales
+      document.getElementById('kpiSemanasOk').textContent = semanasOk;
+      document.getElementById('kpiSemanasFail').textContent = semanasFail;
+      document.getElementById('kpiHorasPendientes').textContent = fmt(horasPendientes) + ' h';
+
+      // Actualizar Tabla de Semanas
+      const tbody = document.querySelector('#tblSemanas tbody');
+      if (tbody) {
+        tbody.innerHTML = stats.map(s => {
+          return `
+            <tr>
+              <td class="fw-bold text-white">${s.semana}</td>
+              <td class="fw-bold" style="color: ${s.color}">${fmt(s.horas)} h</td>
+              <td>
+                <span class="badge" style="background-color: ${s.color}20; color: ${s.color}; border: 1px solid ${s.color}; font-weight: 700;">
+                  ${s.statusLabel.toUpperCase()}
+                </span>
+              </td>
+              <td class="text-end fw-bold" style="color: ${s.diff < 0 ? '#ff4d4d' : (s.diff > 0 ? '#ffffff' : 'var(--accent)')}">
+                ${s.balanceText}
+              </td>
+            </tr>
+          `;
+        }).join('');
+      }
+
+      // Gráfico de Barras con Paleta Trimestral
+      updateChart('chartAnalisis', 'bar', byWeek.map(w => w[0]), stats.map(s => s.horas), {
+        backgroundColor: stats.map(s => s.color),
+        borderRadius: 8,
         hoverBackgroundColor: '#ffffff'
       });
     }
